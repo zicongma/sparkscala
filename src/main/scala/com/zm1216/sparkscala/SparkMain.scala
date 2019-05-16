@@ -46,10 +46,16 @@ object SparkMain{
       'value % 20 as 'assist)
   }
 
+  def sessionQuery(data: DataFrame): DataFrame = {
+
+  }
+
+  // simple filtering query
   def filteringQuery(data: DataFrame): DataFrame = {
     data.filter("playerID == 0")
   }
 
+  // calculate the average xp of each player within 10 seconds window
   def averageXP(data: DataFrame, spark:SparkSession): DataFrame = {
     import spark.implicits._
     data.groupBy(
@@ -58,17 +64,28 @@ object SparkMain{
     ).avg("xp")
   }
 
+  // leaderboard query that calculate the level gained by players within 1 minute window
   def lvlleaderboard(data: DataFrame, spark:SparkSession): DataFrame = {
     import spark.implicits._
-    data.groupBy(
+    data.withWatermark("timestamp", "5 seconds")
+      .groupBy(
       window($"timestamp", "1 minute", "1 minute"),
       $"playerID"
     ).agg(max('level),
       min('level),
       max('level) - min('level) as 'levelGained)
-      .orderBy('levelGained)
   }
 
+  def worldCoordinate(data: DataFrame, spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    data.select(
+      'cellX * 128 + 'vecX as 'worldX,
+      'cellY * -128 - 'vecY + 32768 as 'worldY
+    )
+  }
+
+  // kda leaderboard query that calculates the number of people killed by each player within 1 minute window
+  // inner join + aggregation
   def kdaleaderboard(hero: DataFrame, resource: DataFrame, spark:SparkSession): DataFrame = {
     import spark.implicits._
     hero.join(resource,
@@ -97,7 +114,7 @@ object SparkMain{
     var heroStream = generateHeroStream(spark)
     var resourceStream = generateResourceStream(spark)
 
-    var query = kdaleaderboard(heroStream, resourceStream, spark)
+    var query = lvlleaderboard(heroStream, spark)
       .writeStream
       .outputMode("append")
       .format("console")
