@@ -2,6 +2,7 @@ package com.zm1216.sparkscala
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 
 /**
  * Hello world!
@@ -46,9 +47,6 @@ object SparkMain{
       'value % 20 as 'assist)
   }
 
-  def sessionQuery(data: DataFrame): DataFrame = {
-
-  }
 
   // simple filtering query
   def filteringQuery(data: DataFrame): DataFrame = {
@@ -101,6 +99,8 @@ object SparkMain{
         max('kill) - min('kill) as 'killed)
   }
 
+  case class Hero(id: Int, health: Int, lifeState: Int)
+
   def main(args: Array[String]): Unit = {
 
     val spark = SparkSession.
@@ -111,10 +111,57 @@ object SparkMain{
 
     spark.sparkContext.setLogLevel("ERROR")
 
+    val temperatureNoteSchema = new StructType()
+      .add("m_iPlayerID", IntegerType)
+      .add("m_iHealth", IntegerType)
+      .add("m_lifeState", IntegerType)
+
+
+    import spark.implicits._
+
+    var state = scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, String]]()
+
+    val recon = udf((value: String) => {
+      println("start: " + value)
+      val items = value.split("/")
+      val actionType = items(0)
+      val entity = items(1)
+      if (actionType == "initialize") {
+        var info = scala.collection.mutable.Map[String, String]()
+        for (a <- 2 until items.length - 2 by 2) {
+          info(items(a)) = items(a+1)
+        }
+        state(entity) = info
+      }
+      state foreach {case (key, value) => println(key)}
+      Hero(state(entity)("m_iPlayerID").toInt, state(entity)("m_iHealth").toInt, state(entity)("m_lifeState").toInt)
+    }, temperatureNoteSchema)
+
+
+    val getEntity = udf((value: String) => value.split("/")(0))
+    val getProperty = udf((value: String) => value.split("/")(1))
+    val getNewvalue = udf((value: String) => value.split("/")(2))
+    val getEventTime = udf((value: String) => value.split("/")(3))
+
+    val df = spark
+      .readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "update")
+      .load
+      .withColumn("hero", recon($"value".cast("String")))
+
+    val enriched = df
+      .select(
+        $"hero.m_iPlayerID".as("playerID"),
+        $"hero.m_iHealth".as("health"),
+        $"hero.m_lifeState".as("lifeState"))
+
+
     var heroStream = generateHeroStream(spark)
     var resourceStream = generateResourceStream(spark)
 
-    var query = lvlleaderboard(heroStream, spark)
+    var query = enriched
       .writeStream
       .outputMode("append")
       .format("console")
