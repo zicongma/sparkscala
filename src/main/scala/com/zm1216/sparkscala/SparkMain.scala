@@ -103,43 +103,33 @@ object SparkMain{
   }
 
 
-  case class Update(entity: String,  property: String, newValue: String, eventTime: String, timestamp: Timestamp)
-
-  case class HeroState(heroMap: mutable.HashMap[String, HeroInfo]) {
-  }
+  case class Message(action: String, entity: String, metaData: String)
 
 
-  case class HeroInfo(name: String, id: Int, xp: Int, health: Int) {
-    def updateID(id: Int): HeroInfo = {
-      HeroInfo(this.name, id, this.xp, this.health)
+  case class HeroState(id: Int, health: Int, xp: Int, eventTime: String) {
+    def updateID(id: Int, eventTime: String): HeroState = {
+      HeroState(id, this.health, this.xp, eventTime)
     }
-    def updatexp(xp: Int): HeroInfo = {
-      HeroInfo(this.name, this.id, xp, this.health)
+    def updateHealth(health: Int, eventTime: String): HeroState = {
+      HeroState(this.id, health, this.xp, eventTime)
     }
-    def updateHealth(health: Int): HeroInfo = {
-      HeroInfo(this.name, this.id, this.xp, health)
+    def updatexp(xp: Int, eventTime: String): HeroState = {
+      HeroState(this.id, this.health, xp, eventTime)
     }
   }
 
-  def updateHeroMap(heroMap: mutable.HashMap[String, HeroInfo], hero: String, property: String, value: String) : mutable.HashMap[String, HeroInfo] = {
-    //println(property, value)
-    if (heroMap.contains(hero)) {
-      property match {
-        case "m_iplayerID" => heroMap += (hero -> heroMap(hero).updateID(value.toInt))
-        case "m_iHealth" => heroMap += (hero -> heroMap(hero).updateHealth(value.toInt))
-        case "m_iCurrentXP" => heroMap += (hero -> heroMap(hero).updatexp(value.toInt))
-        case _ => heroMap
-      }
-    } else {
-      heroMap += ((hero, HeroInfo(hero, -1, -1, -1)))
-      property match {
-        case "m_iplayerID" => heroMap += (hero -> heroMap(hero).updateID(value.toInt))
-        case "m_iHealth" => heroMap += (hero -> heroMap(hero).updateHealth(value.toInt))
-        case "m_iCurrentXP" => heroMap += (hero -> heroMap(hero).updatexp(value.toInt))
-        case _ => heroMap
-      }
+
+  case class HeroInfo(name: String, id: Int, health: Int, xp: Int, eventTime: String)
+
+  def updateHeroState(oldState: HeroState, property: String, value: String, eventTime: String): HeroState = {
+    property match {
+      case "m_iPlayerID" => oldState.updateID(value.toInt, eventTime)
+      case "m_iHealth" => oldState.updateHealth(value.toInt, eventTime)
+      case "m_iCurrentXP" => oldState.updatexp(value.toInt, eventTime)
+      case _ => oldState
     }
   }
+
 
   def main(args: Array[String]): Unit = {
 
@@ -164,30 +154,35 @@ object SparkMain{
       .load
       .select('value.cast("string"), 'timestamp)
 
-    val updates = df
+    val messages = df
       .as[(String, Timestamp)]
       .map { case(line, timestamp) =>
         val items = line.split("/")
-        Update(items(0), items(1), items(2), items(3), timestamp)
+        Message(items(0), items(1), line)
       }
-      .filter(update => update.property == "m_iCurrentXP" || update.property == "m_iHealth")
 
-    val infos = updates
-      .groupByKey(update => update.entity)
+    val infos = messages
+      .groupByKey(message => message.entity)
       .mapGroupsWithState[HeroState, HeroInfo](GroupStateTimeout.NoTimeout()) {
-      case (entity: String, updates: Iterator[Update], state: GroupState[HeroState]) =>
-        val update = updates.next()
-        //println(update.entity, update.property, update.newValue)
-        val updatedState = if (state.exists) {
-          println("State Exist!!!")
-          val oldState = state.get
-          HeroState(updateHeroMap(oldState.heroMap, update.entity, update.property, update.newValue))
+      case (entity: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
+
+       var newState =  if (state.exists) {
+          state.get
         } else {
-          var heroMap = new mutable.HashMap[String, HeroInfo]()
-          HeroState(updateHeroMap(heroMap, update.entity, update.property, update.newValue))
+          HeroState(-1, -1, -1, "")
+       }
+        messages.foreach { message =>
+          val items = message.metaData.split("/")
+          if (message.action == "initialize") {
+            for (a <- 2 until items.length - 2 by 2) {
+              newState = updateHeroState(newState, items(a), items(a+1), items(items.length - 1))
+            }
+          } else {
+            newState = updateHeroState(newState, items(2), items(3), items(4))
+          }
         }
-        state.update(updatedState)
-        state.get.heroMap.get(update.entity).orNull
+        state.update(newState)
+        HeroInfo(entity, state.get.id, state.get.health, state.get.xp, state.get.eventTime)
     }
 
 
@@ -211,6 +206,10 @@ object SparkMain{
 
 
     var query = infos
+        .groupBy(
+          window(to_timestamp($"eventTime"), "10 seconds", "10 seconds"),
+          $"id"
+        ).avg("xp")
         .writeStream
         .outputMode("update")
         .format("console")
