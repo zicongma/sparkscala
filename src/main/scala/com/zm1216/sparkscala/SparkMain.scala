@@ -7,6 +7,7 @@ import org.apache.spark.sql.streaming._
 import org.apache.spark.sql.functions._
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 /**
  * Hello world!
@@ -152,18 +153,18 @@ object SparkMain{
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "update")
       .load
-      .select('value.cast("string"), 'timestamp)
+      .select('value.cast("string"))
 
     val messages = df
-      .as[(String, Timestamp)]
-      .map { case(line, timestamp) =>
+      .as[String]
+      .map { case line =>
         val items = line.split("/")
         Message(items(0), items(1), line)
       }
 
     val infos = messages
-      .groupByKey(message => message.entity)
-      .mapGroupsWithState[HeroState, HeroInfo](GroupStateTimeout.NoTimeout()) {
+      .groupByKey(_.entity)
+      .flatMapGroupsWithState[HeroState, HeroInfo](OutputMode.Update(), GroupStateTimeout.NoTimeout()) {
       case (entity: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
 
        var newState =  if (state.exists) {
@@ -171,6 +172,7 @@ object SparkMain{
         } else {
           HeroState(-1, -1, -1, "")
        }
+        var updates = new ListBuffer[HeroInfo]()
         messages.foreach { message =>
           val items = message.metaData.split("/")
           if (message.action == "initialize") {
@@ -180,9 +182,11 @@ object SparkMain{
           } else {
             newState = updateHeroState(newState, items(2), items(3), items(4))
           }
+          updates += HeroInfo(entity, newState.id, newState.health, newState.xp, newState.eventTime)
         }
+
         state.update(newState)
-        HeroInfo(entity, state.get.id, state.get.health, state.get.xp, state.get.eventTime)
+        updates.toList.toIterator
     }
 
 
@@ -206,10 +210,6 @@ object SparkMain{
 
 
     var query = infos
-        .groupBy(
-          window(to_timestamp($"eventTime"), "10 seconds", "10 seconds"),
-          $"id"
-        ).avg("xp")
         .writeStream
         .outputMode("update")
         .format("console")
