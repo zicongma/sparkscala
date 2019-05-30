@@ -1,0 +1,36 @@
+package com.zm1216.sparkscala.queries
+
+import com.zm1216.sparkscala.SparkMain.HeroInfo
+import org.apache.spark.sql.{DataFrame, Dataset}
+
+class Selection {
+
+  // This is a simple selection query for all information about team radiant with about 50% selectivity
+  def TeamRadiantSelection(heroInfos: Dataset[HeroInfo]): Unit = {
+    val query = heroInfos
+      .filter(_.teamNumber == 2)
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
+      .start()
+    query.awaitTermination()
+  }
+
+  // This is a simple selection query for all information about hero under player id 0, about 10% selectivity
+  def playerSelection(heroInfos: Dataset[HeroInfo]): Unit = {
+    val query = heroInfos
+      .filter(_.id == 0)
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
+      .start()
+    query.awaitTermination()
+  }
+
+
+
+}
