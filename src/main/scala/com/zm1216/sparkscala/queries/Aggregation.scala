@@ -9,48 +9,52 @@ import scala.collection.mutable.ListBuffer
 
 class Aggregation {
 
-  // output the total level for 5 players for each team
-  // using flatmapgroupwithstate to keep track of the most recent player level
-  def TeamInfoAggregation(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
+  def DamageWindowSum(combatdf: DataFrame, spark: SparkSession): Unit = {
 
     import spark.implicits._
 
-    val teamInfos = heroInfos
-      .groupByKey(_.teamNumber)
-      .flatMapGroupsWithState[TeamLevelState, TeamLevelInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (teamNumber: Int, infos: Iterator[HeroInfo], state: GroupState[TeamLevelState]) => {
-        var newState =  if (state.exists) {
-          state.get.stateMap
-        } else {
-          Map[String, Int]()
-        }
+    val isHero = udf((name: String) => name.startsWith("npc_dota_hero"))
 
-        var updates = ListBuffer[TeamLevelInfo]()
-        infos.foreach { info =>
-          val previousVal = newState.getOrElse(info.name, -1)
-          newState += (info.name -> info.level)
-          val currentSum = newState.foldLeft(0)(_+_._2)
-          if (previousVal != info.level) {
-            updates += TeamLevelInfo(teamNumber, currentSum)
-          }
-        }
-        state.update(TeamLevelState(newState))
-        updates.toList.toIterator
-      }
-    }
-    val query = teamInfos
-//        .groupBy("id")
-//      .agg(max("level") as "topLevel")
-//      .groupBy("teamNumber")
-//      .agg(sum("topLevel"))
+    val query = combatdf
+      .filter($"combatType" === "damage")
+      .filter(isHero('attacker))
+      .withWatermark("eventTime", "2 minutes")
+      .groupBy(
+        window('eventTime, "5 minutes", "1 minute"),
+      'attacker)
+      .agg(sum('value) as 'damageTotal)
       .writeStream
       .outputMode("append")
       .format("console")
       .option("numRows", 100)
       .option("truncate", "false")
       .start()
-    query.awaitTermination()
 
+    query.awaitTermination()
+  }
+
+  def DamageOverTime(combatdf: DataFrame, spark: SparkSession): Unit = {
+
+    import spark.implicits._
+
+    val isHero = udf((name: String) => name.startsWith("npc_dota_hero"))
+
+    val query = combatdf
+      .filter($"combatType" === "damage")
+      .filter(isHero('attacker))
+      .withWatermark("eventTime", "2 minutes")
+      .groupBy(
+        window('eventTime, "1 hour", "1 hour"),
+        'attacker)
+      .agg(sum('value) as 'damageTotal)
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
+      .start()
+
+    query.awaitTermination()
   }
 
 }

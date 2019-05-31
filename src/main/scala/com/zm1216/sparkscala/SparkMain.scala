@@ -2,7 +2,7 @@ package com.zm1216.sparkscala
 
 import java.sql.Timestamp
 
-import com.zm1216.sparkscala.queries.{Aggregation, MathCalculation, Projection}
+import com.zm1216.sparkscala.queries.{Aggregation, MathCalculation, Projection, Stateful}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.streaming._
 import org.apache.spark.sql.functions._
@@ -21,6 +21,14 @@ object SparkMain{
   case class TeamPlayerPositions(stateMap: Map[String, (Double, Double)])
 
   case class TeamAreaControlled(teamNumber: Int, areaControlled: Float)
+
+  case class PrimaryAttributeState(attribute: String, value: Float)
+
+  case class PrimaryAttributeInfo(name: String, attribute: String, value: Float)
+
+  case class KDAState(kill: Int, death: Int, assist: Int)
+
+  case class KDAInfo(id: Int, value: Float)
 
   case class TeamLevelState(stateMap: Map[String, Int])
 
@@ -70,6 +78,24 @@ object SparkMain{
       .option("subscribe", "resource")
       .load
       .select('value.cast("string"))
+
+    val getCombatType = udf((value: String) => value.split("/")(0))
+    val getAttacker = udf((value: String) => value.split("/")(1))
+    val getTarget = udf((value: String) => value.split("/")(2))
+    val getValue = udf((value: String) => value.split("/")(3))
+    val getEventTime = udf((value: String) => value.split("/")(4))
+
+    val combatdf = spark
+      .readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "combatlog")
+      .load
+      .select(getCombatType('value) as 'combatType,
+        getAttacker('value) as 'attacker,
+        getTarget('value) as 'target,
+        getValue('value) as 'value,
+        getEventTime('value).cast("timestamp") as 'eventTime)
 
     val heroMessages = herodf
       .as[String]
@@ -156,56 +182,6 @@ object SparkMain{
 
     }
 
-    new MathCalculation().TerritoryControled(heroInfos, spark)
-
-
-    //    val getEntity = udf((value: String) => value.split("/")(0))
-//    val getProperty = udf((value: String) => value.split("/")(1))
-//    val getNewvalue = udf((value: String) => value.split("/")(2))
-//    val getEventTime = udf((value: String) => value.split("/")(3))
-//
-//    val df = spark
-//      .readStream
-//      .format("kafka")
-//      .option("kafka.bootstrap.servers", "localhost:9092")
-//      .option("subscribe", "update")
-//      .load
-//      .select(
-//        getEntity('value) as 'entity,
-//        getProperty('value) as 'property,
-//        getNewvalue('value) as 'newValue,
-//        getEventTime('value) as 'eventTime
-//      )
-
-
-//    var query = heroInfos
-//        .join(resourceInfos,
-//          Seq("id"),
-//          joinType = "inner")
-//        .withColumn("eventTime", col("eventTime").cast("timestamp"))
-//        .withWatermark("eventTime", "2 minutes")
-//        .groupBy(
-//          window($"eventTime", "1 hour", "1 hour"),
-//          $"id"
-//        ).avg("health")
-//        .writeStream
-//        .outputMode("append")
-//        .format("console")
-//        .option("numRows", 100)
-//        .option("truncate", "false")
-//        .start()
-
-//    var heroStream = generateHeroStream(spark)
-//    var resourceStream = generateResourceStream(spark)
-//
-//    var query = lvlleaderboard(heroStream, spark)
-//      .writeStream
-//      .outputMode("update")
-//      .format("console")
-//      .option("truncate", "false")
-//      .option("numRows", 100)
-//      .start()
-//
-//    query.awaitTermination()
+    new Stateful().PrimaryAttribute(heroInfos, spark)
   }
 }
