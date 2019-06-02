@@ -9,6 +9,7 @@ import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode
 import scala.collection.mutable.ListBuffer
 
 class Stateful {
+
   // output the total level for 5 players for each team
   // using flatmapgroupwithstate to keep track of the most recent player level
   def TeamInfoAggregation(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
@@ -91,7 +92,6 @@ class Stateful {
       .option("truncate", "false")
       .start()
     query.awaitTermination()
-
   }
 
 }

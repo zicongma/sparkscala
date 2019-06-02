@@ -18,6 +18,24 @@ import scala.collection.mutable.ListBuffer
  */
 object SparkMain{
 
+  @volatile private var numRecs: Long = 0L
+  @volatile private var startTime: Long = 0L
+  @volatile private var endTime: Long = 0L
+
+  class ThroughputListener extends StreamingQueryListener {
+    override def onQueryStarted(event: StreamingQueryListener.QueryStartedEvent): Unit = {
+      startTime = System.currentTimeMillis()
+    }
+
+    override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
+      numRecs += event.progress.numInputRows
+    }
+
+    override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
+      endTime = System.currentTimeMillis()
+    }
+  }
+
   case class TeamPlayerPositions(stateMap: Map[String, (Double, Double)])
 
   case class TeamAreaControlled(teamNumber: Int, areaControlled: Float)
@@ -52,12 +70,15 @@ object SparkMain{
 
     import org.apache.spark.sql.functions._
 
+    val spark = SparkSession
+      .builder
+      .config("spark.streaming.stopGracefullyOnShutdown", true)
+      .config("spark.sql.streaming.metricsEnabled",true)
+      .appName("GameBench")
+      .master("local")
+      .getOrCreate()
 
-    val spark = SparkSession.
-      builder.
-      appName("SparkRateTest").
-      master("local").
-      getOrCreate()
+    spark.streams.addListener(new ThroughputListener)
 
     spark.sparkContext.setLogLevel("ERROR")
 
@@ -182,6 +203,9 @@ object SparkMain{
 
     }
 
-    new Stateful().PrimaryAttribute(heroInfos, spark)
+    val query: StreamingQuery = new Projection().BasicAttributeProjection(heroInfos)
+    query.awaitTermination(60000)
+    query.stop()
+    println((endTime - startTime) / 1000, numRecs)
   }
 }

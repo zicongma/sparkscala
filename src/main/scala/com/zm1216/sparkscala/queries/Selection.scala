@@ -31,3 +31,4 @@ class Selection {
     query.awaitTermination()
   }
 }
+
