@@ -50,18 +50,18 @@ object SparkMain{
 
   case class TeamLevelState(stateMap: Map[String, Int])
 
-  case class TeamLevelInfo(teamNumber: Int, totalLevel: Int)
+  case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, lastUpdate: String)
 
-  case class Message(action: String, entity: String, metaData: String)
+  case class Message(action: String, key: String, metaData: String)
 
 
   case class HeroState(stateMap: Map[String, String])
 
   case class ResourceState(stateMap: Map[String, String])
 
-  case class ResourceInfo(id: Int, kill: Int, assist: Int, death: Int, eventTime: String)
+  case class ResourceInfo(game: Int, id: Int, kill: Int, assist: Int, death: Int, eventTime: String)
 
-  case class HeroInfo(name: String, id: Int, level: Int, xp: Int, health: Int, lifeState: Int, cellX: Int, cellY: Int,
+  case class HeroInfo(game: Int, name: String, id: Int, level: Int, xp: Int, health: Int, lifeState: Int, cellX: Int, cellY: Int,
                       vecX: Float, vecY: Float, teamNumber: Int, damageMin: Int, damageMax: Int,  strength: Float,
                       agility: Float, intellect: Float, eventTime: String)
 
@@ -100,19 +100,22 @@ object SparkMain{
       .load
       .select('value.cast("string"))
 
-    val getCombatType = udf((value: String) => value.split("/")(0))
-    val getAttacker = udf((value: String) => value.split("/")(1))
-    val getTarget = udf((value: String) => value.split("/")(2))
-    val getValue = udf((value: String) => value.split("/")(3))
-    val getEventTime = udf((value: String) => value.split("/")(4))
+    val getGameNumber = udf((value: String) => value.split("/")(0))
+    val getCombatType = udf((value: String) => value.split("/")(1))
+    val getAttacker = udf((value: String) => value.split("/")(2))
+    val getTarget = udf((value: String) => value.split("/")(3))
+    val getValue = udf((value: String) => value.split("/")(4))
+    val getEventTime = udf((value: String) => value.split("/")(5))
 
     val combatdf = spark
       .readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "combatlog")
+      .option("failOnDataLoss", "false")
       .load
-      .select(getCombatType('value) as 'combatType,
+      .select(getGameNumber('value) as 'game,
+        getCombatType('value) as 'combatType,
         getAttacker('value) as 'attacker,
         getTarget('value) as 'target,
         getValue('value) as 'value,
@@ -122,20 +125,20 @@ object SparkMain{
       .as[String]
       .map { case line =>
         val items = line.split("/")
-        Message(items(0), items(1), line)
+        Message(items(0), items(1) + items(2), line)
       }
 
     val resourceMessages = resourcedf
       .as[String]
       .map { case line =>
         val items = line.split("/")
-        Message(items(0), items(1), line)
+        Message(items(0), items(1) + items(2), line)
       }
 
     val heroInfos = heroMessages
-      .groupByKey(_.entity)
+      .groupByKey(_.key)
       .flatMapGroupsWithState[HeroState, HeroInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (entity: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
+      case (key: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
 
        var newState =  if (state.exists) {
           state.get.stateMap
@@ -149,15 +152,15 @@ object SparkMain{
         messages.foreach { message =>
           val items = message.metaData.split("/")
           if (message.action == "initialize") {
-            for (a <- 2 until items.length - 2 by 2) {
-              newState += (items(a) -> items(a+1))
+            for (a <- 3 until items.length - 2 by 2) {
+              newState += (items(a) -> items(a + 1))
             }
             newState += ("eventTime" -> items(items.length - 1))
           } else {
-            newState += (items(2) -> items(3))
-            newState += ("eventTime" -> items(4))
+            newState += (items(3) -> items(4))
+            newState += ("eventTime" -> items(5))
           }
-          updates += HeroInfo(entity, newState("m_iPlayerID").toInt, newState("m_iCurrentLevel").toInt,
+          updates += HeroInfo(items(1).toInt, items(2), newState("m_iPlayerID").toInt, newState("m_iCurrentLevel").toInt,
             newState("m_iCurrentXP").toInt, newState("m_iHealth").toInt, newState("m_lifeState").toInt,
             newState("CBodyComponent.m_cellX").toInt, newState("CBodyComponent.m_cellY").toInt,
             newState("CBodyComponent.m_vecX").toFloat, newState("CBodyComponent.m_vecY").toFloat,
@@ -170,14 +173,14 @@ object SparkMain{
     }
 
     val resourceInfos = resourceMessages
-      .groupByKey(_.entity)
+      .groupByKey(_.key)
       .flatMapGroupsWithState[ResourceState, ResourceInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (entity: String, messages: Iterator[Message], state: GroupState[ResourceState]) =>
+      case (key: String, messages: Iterator[Message], state: GroupState[ResourceState]) =>
 
         var newState =  if (state.exists) {
           state.get.stateMap
         } else {
-          Map("m_iPlayerID" -> entity.charAt(entity.length - 1).toString, "m_iKills" -> "", "m_iAssists" -> "",
+          Map("m_iPlayerID" -> key.charAt(key.length - 1).toString, "m_iKills" -> "", "m_iAssists" -> "",
             "m_iDeaths" -> "", "eventTime" -> "")
         }
 
@@ -185,27 +188,58 @@ object SparkMain{
         messages.foreach { message =>
           val items = message.metaData.split("/")
           if (message.action == "initialize") {
-            for (a <- 2 until items.length - 2 by 2) {
+            for (a <- 3 until items.length - 2 by 2) {
               val strs = items(a).split('.')
               newState += (strs(2) -> items(a+1))
             }
             newState += ("eventTime" -> items(items.length - 1))
           } else {
-            val strs = items(2).split('.')
-            newState += (strs(2) -> items(3))
-            newState += ("eventTime" -> items(4))
+            println("resource")
+            val strs = items(3).split("\\.")
+            newState += (strs(2) -> items(4))
+            newState += ("eventTime" -> items(5))
           }
-          updates += ResourceInfo(newState("m_iPlayerID").toInt, newState("m_iKills").toInt,
-            newState("m_iAssists").toInt, newState("m_iDeaths").toInt, newState("eventTime"))
+          println(key)
+          updates += ResourceInfo(items(1).toInt, newState("m_iPlayerID").toInt, newState("m_iKills").toInt,
+            newState("m_iAssists").toInt, newState("").toInt, newState("eventTime"))
         }
         state.update(ResourceState(newState))
         updates.toList.toIterator
 
     }
 
-    val query: StreamingQuery = new Projection().BasicAttributeProjection(heroInfos)
-    query.awaitTermination(60000)
+//    val query = heroInfos
+//      .select("name", "level", "health", "xp")
+//      .writeStream
+//      .outputMode("append")
+//      .format("console")
+//      .option("numRows", 100)
+//      .option("truncate", "false")
+//      .start()
+//
+//    query.awaitTermination()
+
+    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
+    query.awaitTermination(1320000)
     query.stop()
-    println((endTime - startTime) / 1000, numRecs)
+    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
+    println("\n THROUGHPUT \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    spark.read
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "output")
+      .load()
+      .withColumn("result", from_json('value.cast("string"), outputSchema))
+      .select(col("result.lastUpdate").cast("timestamp") as "eventTime", 'timestamp)
+      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
+      .selectExpr(
+        "min(diff) as latency_min",
+        "mean(diff) as latency_avg",
+        "percentile_approx(diff, 0.95) as latency_95",
+        "percentile_approx(diff, 0.99) as latency_99",
+        "max(diff) as latency_max")
+      .show()
+//    val query = new Stateful().TeamInfoAggregation(heroInfos, spark)
+//    query.awaitTermination()
   }
 }

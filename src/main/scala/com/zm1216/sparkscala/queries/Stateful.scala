@@ -4,7 +4,8 @@ import com.zm1216.sparkscala.SparkMain
 import com.zm1216.sparkscala.SparkMain._
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{Dataset, SparkSession}
-import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode}
+import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode, StreamingQuery}
+import org.apache.spark.sql.types.{IntegerType, StringType, StructType}
 
 import scala.collection.mutable.ListBuffer
 
@@ -12,14 +13,14 @@ class Stateful {
 
   // output the total level for 5 players for each team
   // using flatmapgroupwithstate to keep track of the most recent player level
-  def TeamInfoAggregation(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
+  def TeamInfoAggregation(heroInfos: Dataset[HeroInfo], spark: SparkSession): (StreamingQuery, StructType) = {
 
     import spark.implicits._
 
     val teamInfos = heroInfos
-      .groupByKey(_.teamNumber)
+      .groupByKey(info => (info.game, info.teamNumber))
       .flatMapGroupsWithState[TeamLevelState, TeamLevelInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (teamNumber: Int, infos: Iterator[HeroInfo], state: GroupState[TeamLevelState]) => {
+      case (key: (Int, Int), infos: Iterator[HeroInfo], state: GroupState[TeamLevelState]) => {
         var newState =  if (state.exists) {
           state.get.stateMap
         } else {
@@ -32,7 +33,7 @@ class Stateful {
           newState += (info.name -> info.level)
           val currentSum = newState.foldLeft(0)(_+_._2)
           if (previousVal != info.level) {
-            updates += TeamLevelInfo(teamNumber, currentSum)
+            updates += TeamLevelInfo(key._1, key._2, currentSum, info.eventTime)
           }
         }
         state.update(TeamLevelState(newState))
@@ -40,14 +41,22 @@ class Stateful {
       }
     }
     val query = teamInfos
+      .select(to_json(struct("*")) as 'value)
       .writeStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
       .start()
-    query.awaitTermination()
 
+    val outputSchema = new StructType{}
+      .add("game", IntegerType)
+      .add("teamNumber", IntegerType)
+      .add("totalLevel", IntegerType)
+      .add("lastUpdate", StringType)
+
+    (query, outputSchema)
   }
 
   def PrimaryAttribute(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
