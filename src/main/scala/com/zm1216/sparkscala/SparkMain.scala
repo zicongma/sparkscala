@@ -2,7 +2,7 @@ package com.zm1216.sparkscala
 
 import java.sql.Timestamp
 
-import com.zm1216.sparkscala.queries.{Aggregation, MathCalculation, Projection, Stateful}
+import com.zm1216.sparkscala.queries._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.streaming._
 import org.apache.spark.sql.functions._
@@ -38,7 +38,7 @@ object SparkMain{
 
   case class TeamPlayerPositions(stateMap: Map[String, (Double, Double)])
 
-  case class TeamAreaControlled(teamNumber: Int, areaControlled: Float)
+  case class TeamAreaControlled(teamNumber: Int, positions: List[(Double, Double)])
 
   case class PrimaryAttributeState(attribute: String, value: Float)
 
@@ -208,29 +208,18 @@ object SparkMain{
 
     }
 
-//    val query = heroInfos
-//      .select("name", "level", "health", "xp")
-//      .writeStream
-//      .outputMode("append")
-//      .format("console")
-//      .option("numRows", 100)
-//      .option("truncate", "false")
-//      .start()
-//
-//    query.awaitTermination()
-
-    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
+    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
     query.awaitTermination(1320000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    println("\n THROUGHPUT FOR MATH CALCULATION \n" + numRecs * 1000 / (endTime - startTime) + "\n")
     spark.read
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "output")
       .load()
       .withColumn("result", from_json('value.cast("string"), outputSchema))
-      .select(col("result.lastUpdate").cast("timestamp") as "eventTime", 'timestamp)
+      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
       .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
       .selectExpr(
         "min(diff) as latency_min",
@@ -239,7 +228,9 @@ object SparkMain{
         "percentile_approx(diff, 0.99) as latency_99",
         "max(diff) as latency_max")
       .show()
-//    val query = new Stateful().TeamInfoAggregation(heroInfos, spark)
+
+
+//    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
 //    query.awaitTermination()
   }
 }

@@ -1,7 +1,9 @@
 package com.zm1216.sparkscala.queries
 
 import com.zm1216.sparkscala.SparkMain._
-import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode}
+import org.apache.spark.sql.functions.{struct, to_json, udf}
+import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode, StreamingQuery}
+import org.apache.spark.sql.types.{FloatType, IntegerType, StringType, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 import scala.collection.mutable.ListBuffer
@@ -9,28 +11,39 @@ import scala.collection.mutable.ListBuffer
 class MathCalculation {
 
   // simple calculation query to calculate hero's position based on vec and cell values
-  def HeroPositionCalculation(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
+  def HeroPositionCalculation(heroInfos: Dataset[HeroInfo], spark: SparkSession): (StreamingQuery, StructType) = {
 
     import spark.implicits._
 
     val query = heroInfos
-      .select(
+      .select('game,
         'name,
         'cellX * 128 + 'vecX as 'worldX,
-        'cellY * -128 - 'vecY + 32768 as 'worldY
+        'cellY * -128 - 'vecY + 32768 as 'worldY,
+        'eventTime
       )
+      .select(to_json(struct("*")) as 'value)
       .writeStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
       .start()
-    query.awaitTermination()
+
+    val outputSchema = new StructType{}
+      .add("game", IntegerType)
+      .add("name", StringType)
+      .add("worldX", FloatType)
+      .add("worldY", FloatType)
+      .add("eventTime", StringType)
+
+    (query, outputSchema)
   }
 
 
 
-  def TerritoryControled(heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
+  def TerritoryControled(heroInfos: Dataset[HeroInfo], spark: SparkSession): StreamingQuery = {
 
     import spark.implicits._
 
@@ -50,15 +63,15 @@ class MathCalculation {
           newState += (info.name -> (info.cellX * 128 + info.vecX, info.cellY * -128 - info.vecY + 32768))
           if (newState.size == 5) {
             val points = newState.values.toList
-//            val sortedPoints = points.sortWith(m(_,(0.0,0.0)) < m(_,(0.0,0.0)))
-//            val hullPoints = get_hull(sortedPoints, List[(Double, Double)]())
-            updates += TeamAreaControlled(teamNumber, 1)
+            var sortedPoints = points.sortWith(m(_,(0.0,0.0)) < m(_,(0.0,0.0)))
+            updates += TeamAreaControlled(teamNumber, points)
           }
         }
         state.update(TeamPlayerPositions(newState))
         updates.toList.toIterator
       }
     }
+
     val query = areaInfos
       .writeStream
       .outputMode("append")
@@ -66,8 +79,8 @@ class MathCalculation {
       .option("numRows", 100)
       .option("truncate", "false")
       .start()
-    query.awaitTermination()
 
+    query
   }
 
   def calculateAreaUnderSegment(A: (Double, Double) , B: (Double, Double)): Double = {
