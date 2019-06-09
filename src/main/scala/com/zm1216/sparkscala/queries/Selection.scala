@@ -12,14 +12,11 @@ class Selection {
   def TeamRadiantSelection(heroInfos: Dataset[HeroInfo]): (StreamingQuery, StructType) = {
     val query = heroInfos
       .filter(_.teamNumber == 2)
-      .select("game", "name", "strength", "agility", "intellect", "eventTime")
-      .select(to_json(struct("*")) as 'value)
       .writeStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("topic", "output")
-      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
       .start()
     query
 

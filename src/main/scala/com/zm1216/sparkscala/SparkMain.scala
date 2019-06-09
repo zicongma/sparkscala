@@ -1,5 +1,6 @@
 package com.zm1216.sparkscala
 
+import java.io.{BufferedWriter, FileWriter}
 import java.sql.Timestamp
 
 import com.zm1216.sparkscala.queries._
@@ -21,18 +22,22 @@ object SparkMain{
   @volatile private var numRecs: Long = 0L
   @volatile private var startTime: Long = 0L
   @volatile private var endTime: Long = 0L
+  val bw = new BufferedWriter(new FileWriter("log.txt"))
 
   class ThroughputListener extends StreamingQueryListener {
     override def onQueryStarted(event: StreamingQueryListener.QueryStartedEvent): Unit = {
       startTime = System.currentTimeMillis()
+
     }
 
     override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
       numRecs += event.progress.numInputRows
+      bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
     }
 
     override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
       endTime = System.currentTimeMillis()
+      bw.close()
     }
   }
 
@@ -92,14 +97,6 @@ object SparkMain{
       .load
       .select('value.cast("string"))
 
-    val resourcedf = spark
-      .readStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", "resource")
-      .load
-      .select('value.cast("string"))
-
     val getGameNumber = udf((value: String) => value.split("/")(0))
     val getCombatType = udf((value: String) => value.split("/")(1))
     val getAttacker = udf((value: String) => value.split("/")(2))
@@ -128,12 +125,6 @@ object SparkMain{
         Message(items(0), items(1) + items(2), line)
       }
 
-    val resourceMessages = resourcedf
-      .as[String]
-      .map { case line =>
-        val items = line.split("/")
-        Message(items(0), items(1) + items(2), line)
-      }
 
     val heroInfos = heroMessages
       .groupByKey(_.key)
@@ -172,62 +163,43 @@ object SparkMain{
         updates.toList.toIterator
     }
 
-    val resourceInfos = resourceMessages
-      .groupByKey(_.key)
-      .flatMapGroupsWithState[ResourceState, ResourceInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (key: String, messages: Iterator[Message], state: GroupState[ResourceState]) =>
+//  val query = herodf
+//    .writeStream
+//    .outputMode("update")
+//    .format("console")
+//    .option("numRows", 100)
+//    .option("truncate", "false")
+//    .start()
+//
+//    query.awaitTermination(1320000)
+//    query.stop()
+//    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
+//    println("\n THROUGHPUT FOR Basic Projection \n" + numRecs * 1000 / (endTime - startTime) + "\n")
 
-        var newState =  if (state.exists) {
-          state.get.stateMap
-        } else {
-          Map("m_iPlayerID" -> key.charAt(key.length - 1).toString, "m_iKills" -> "", "m_iAssists" -> "",
-            "m_iDeaths" -> "", "eventTime" -> "")
-        }
+    new Aggregation().DamageWindowSum(combatdf, spark)
 
-        var updates = new ListBuffer[ResourceInfo]()
-        messages.foreach { message =>
-          val items = message.metaData.split("/")
-          if (message.action == "initialize") {
-            for (a <- 3 until items.length - 2 by 2) {
-              val strs = items(a).split('.')
-              newState += (strs(2) -> items(a+1))
-            }
-            newState += ("eventTime" -> items(items.length - 1))
-          } else {
-            println("resource")
-            val strs = items(3).split("\\.")
-            newState += (strs(2) -> items(4))
-            newState += ("eventTime" -> items(5))
-          }
-          println(key)
-          updates += ResourceInfo(items(1).toInt, newState("m_iPlayerID").toInt, newState("m_iKills").toInt,
-            newState("m_iAssists").toInt, newState("").toInt, newState("eventTime"))
-        }
-        state.update(ResourceState(newState))
-        updates.toList.toIterator
 
-    }
 
-    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
-    query.awaitTermination(1320000)
-    query.stop()
-    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR MATH CALCULATION \n" + numRecs * 1000 / (endTime - startTime) + "\n")
-    spark.read
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", "output")
-      .load()
-      .withColumn("result", from_json('value.cast("string"), outputSchema))
-      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
-      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
-      .selectExpr(
-        "min(diff) as latency_min",
-        "mean(diff) as latency_avg",
-        "percentile_approx(diff, 0.95) as latency_95",
-        "percentile_approx(diff, 0.99) as latency_99",
-        "max(diff) as latency_max")
-      .show()
+//    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
+//    query.awaitTermination(1320000)
+//    query.stop()
+//    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
+//    println("\n THROUGHPUT FOR Basic Projection \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+//    spark.read
+//      .format("kafka")
+//      .option("kafka.bootstrap.servers", "localhost:9092")
+//      .option("subscribe", "output")
+//      .load()
+//      .withColumn("result", from_json('value.cast("string"), outputSchema))
+//      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
+//      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
+//      .selectExpr(
+//        "min(diff) as latency_min",
+//        "mean(diff) as latency_avg",
+//        "percentile_approx(diff, 0.95) as latency_95",
+//        "percentile_approx(diff, 0.99) as latency_99",
+//        "max(diff) as latency_max")
+//      .show()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
