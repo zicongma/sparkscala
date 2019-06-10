@@ -167,7 +167,7 @@ object SparkMain{
 //    query.awaitTermination(1320000)
 //    query.stop()
 //    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-//    println("\n THROUGHPUT FOR BAS \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    println("\n THROUGHPUT FOR No Query \n" + numRecs * 1000 / (endTime - startTime) + "\n")
 //    spark.read
 //      .format("kafka")
 //      .option("kafka.bootstrap.servers", "localhost:9092")
