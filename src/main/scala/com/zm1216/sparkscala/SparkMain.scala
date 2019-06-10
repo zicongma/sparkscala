@@ -50,9 +50,9 @@ object SparkMain{
 
   case class TeamLevelState(stateMap: Map[String, Int])
 
-  case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, lastUpdate: String)
+  case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, lastUpdate: Timestamp)
 
-  case class Message(action: String, key: String, metaData: String)
+  case class Message(action: String, key: String, metaData: String, timestamp: Timestamp)
 
 
   case class HeroState(stateMap: Map[String, String])
@@ -63,7 +63,7 @@ object SparkMain{
 
   case class HeroInfo(game: Int, name: String, id: Int, level: Int, xp: Int, health: Int, lifeState: Int, cellX: Int, cellY: Int,
                       vecX: Float, vecY: Float, teamNumber: Int, damageMin: Int, damageMax: Int,  strength: Float,
-                      agility: Float, intellect: Float, eventTime: String)
+                      agility: Float, intellect: Float, eventTime: Timestamp)
 
 
   def main(args: Array[String]): Unit = {
@@ -90,15 +90,7 @@ object SparkMain{
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "hero")
       .load
-      .select('value.cast("string"))
-
-    val resourcedf = spark
-      .readStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", "resource")
-      .load
-      .select('value.cast("string"))
+      .select('value.cast("string"), 'timestamp)
 
     val getGameNumber = udf((value: String) => value.split("/")(0))
     val getCombatType = udf((value: String) => value.split("/")(1))
@@ -122,17 +114,10 @@ object SparkMain{
         getEventTime('value).cast("timestamp") as 'eventTime)
 
     val heroMessages = herodf
-      .as[String]
-      .map { case line =>
+      .as[(String, Timestamp)]
+      .map { case (line, timestamp) =>
         val items = line.split("/")
-        Message(items(0), items(1) + items(2), line)
-      }
-
-    val resourceMessages = resourcedf
-      .as[String]
-      .map { case line =>
-        val items = line.split("/")
-        Message(items(0), items(1) + items(2), line)
+        Message(items(0), items(1) + items(2), line, timestamp)
       }
 
     val heroInfos = heroMessages
@@ -146,19 +131,17 @@ object SparkMain{
          Map("m_iPlayerID" -> "", "m_iCurrentLevel" -> "", "m_iCurrentXP" -> "", "m_iHealth" -> "", "m_lifeState" -> "",
            "CBodyComponent.m_cellX" -> "", "CBodyComponent.m_cellY" -> "", "CBodyComponent.m_vecX" -> "",
            "CBodyComponent.m_vecY" -> "", "m_iTeamNum" -> "", "m_iDamageMin" -> "", "m_iDamageMax" -> "",
-           "m_flStrength" -> "", "m_flAgility" -> "", "m_flIntellect" -> "", "eventTime" -> "")
+           "m_flStrength" -> "", "m_flAgility" -> "", "m_flIntellect" -> "")
        }
         var updates = new ListBuffer[HeroInfo]()
         messages.foreach { message =>
           val items = message.metaData.split("/")
           if (message.action == "initialize") {
-            for (a <- 3 until items.length - 2 by 2) {
+            for (a <- 3 until items.length - 1 by 2) {
               newState += (items(a) -> items(a + 1))
             }
-            newState += ("eventTime" -> items(items.length - 1))
           } else {
             newState += (items(3) -> items(4))
-            newState += ("eventTime" -> items(5))
           }
           updates += HeroInfo(items(1).toInt, items(2), newState("m_iPlayerID").toInt, newState("m_iCurrentLevel").toInt,
             newState("m_iCurrentXP").toInt, newState("m_iHealth").toInt, newState("m_lifeState").toInt,
@@ -166,53 +149,18 @@ object SparkMain{
             newState("CBodyComponent.m_vecX").toFloat, newState("CBodyComponent.m_vecY").toFloat,
             newState("m_iTeamNum").toInt, newState("m_iDamageMin").toInt, newState("m_iDamageMax").toInt,
             newState("m_flStrength").toFloat, newState("m_flAgility").toFloat,
-            newState("m_flIntellect").toFloat, newState("eventTime"))
+            newState("m_flIntellect").toFloat, message.timestamp)
         }
         state.update(HeroState(newState))
         updates.toList.toIterator
     }
 
-    val resourceInfos = resourceMessages
-      .groupByKey(_.key)
-      .flatMapGroupsWithState[ResourceState, ResourceInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-      case (key: String, messages: Iterator[Message], state: GroupState[ResourceState]) =>
-
-        var newState =  if (state.exists) {
-          state.get.stateMap
-        } else {
-          Map("m_iPlayerID" -> key.charAt(key.length - 1).toString, "m_iKills" -> "", "m_iAssists" -> "",
-            "m_iDeaths" -> "", "eventTime" -> "")
-        }
-
-        var updates = new ListBuffer[ResourceInfo]()
-        messages.foreach { message =>
-          val items = message.metaData.split("/")
-          if (message.action == "initialize") {
-            for (a <- 3 until items.length - 2 by 2) {
-              val strs = items(a).split('.')
-              newState += (strs(2) -> items(a+1))
-            }
-            newState += ("eventTime" -> items(items.length - 1))
-          } else {
-            println("resource")
-            val strs = items(3).split("\\.")
-            newState += (strs(2) -> items(4))
-            newState += ("eventTime" -> items(5))
-          }
-          println(key)
-          updates += ResourceInfo(items(1).toInt, newState("m_iPlayerID").toInt, newState("m_iKills").toInt,
-            newState("m_iAssists").toInt, newState("").toInt, newState("eventTime"))
-        }
-        state.update(ResourceState(newState))
-        updates.toList.toIterator
-
-    }
 
     val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
     query.awaitTermination(1320000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR MATH CALCULATION \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    println("\n THROUGHPUT FOR BAS \n" + numRecs * 1000 / (endTime - startTime) + "\n")
     spark.read
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
