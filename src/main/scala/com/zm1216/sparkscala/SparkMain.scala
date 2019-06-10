@@ -9,6 +9,7 @@ import org.apache.spark.sql.functions._
 
 import scala.collection.mutable
 import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.types.StructType
 
 import scala.collection.mutable.ListBuffer
 
@@ -97,7 +98,6 @@ object SparkMain{
     val getAttacker = udf((value: String) => value.split("/")(2))
     val getTarget = udf((value: String) => value.split("/")(3))
     val getValue = udf((value: String) => value.split("/")(4))
-    val getEventTime = udf((value: String) => value.split("/")(5))
 
     val combatdf = spark
       .readStream
@@ -111,7 +111,7 @@ object SparkMain{
         getAttacker('value) as 'attacker,
         getTarget('value) as 'target,
         getValue('value) as 'value,
-        getEventTime('value).cast("timestamp") as 'eventTime)
+        'timestamp as 'eventTime)
 
     val heroMessages = herodf
       .as[(String, Timestamp)]
@@ -155,27 +155,34 @@ object SparkMain{
         updates.toList.toIterator
     }
 
+    val query = herodf
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .start()
 
-    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
-    query.awaitTermination(1320000)
-    query.stop()
-    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR BAS \n" + numRecs * 1000 / (endTime - startTime) + "\n")
-    spark.read
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", "output")
-      .load()
-      .withColumn("result", from_json('value.cast("string"), outputSchema))
-      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
-      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
-      .selectExpr(
-        "min(diff) as latency_min",
-        "mean(diff) as latency_avg",
-        "percentile_approx(diff, 0.95) as latency_95",
-        "percentile_approx(diff, 0.99) as latency_99",
-        "max(diff) as latency_max")
-      .show()
+    query.awaitTermination(600000)
+
+//    val (query, outputSchema) = new MathCalculation().HeroPositionCalculation(heroInfos, spark)
+//    query.awaitTermination(1320000)
+//    query.stop()
+//    val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
+//    println("\n THROUGHPUT FOR BAS \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+//    spark.read
+//      .format("kafka")
+//      .option("kafka.bootstrap.servers", "localhost:9092")
+//      .option("subscribe", "output")
+//      .load()
+//      .withColumn("result", from_json('value.cast("string"), outputSchema))
+//      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
+//      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
+//      .selectExpr(
+//        "min(diff) as latency_min",
+//        "mean(diff) as latency_avg",
+//        "percentile_approx(diff, 0.95) as latency_95",
+//        "percentile_approx(diff, 0.99) as latency_99",
+//        "max(diff) as latency_max")
+//      .show()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)

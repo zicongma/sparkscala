@@ -1,10 +1,10 @@
 package com.zm1216.sparkscala.queries
 
 import com.zm1216.sparkscala.SparkMain.HeroInfo
-import org.apache.spark.sql.functions.{struct, to_json}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.StreamingQuery
 import org.apache.spark.sql.types.{FloatType, IntegerType, StringType, StructType}
-import org.apache.spark.sql.{DataFrame, Dataset}
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 class Selection {
 
@@ -21,7 +21,6 @@ class Selection {
       .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
       .start()
-    query
 
     val outputSchema = new StructType{}
       .add("game", IntegerType)
@@ -45,6 +44,29 @@ class Selection {
       .option("truncate", "false")
       .start()
     query.awaitTermination()
+  }
+
+  def DamageEventSelection(combatdf : DataFrame, spark: SparkSession): (StreamingQuery, StructType) = {
+    import spark.implicits._
+
+    val query = combatdf
+      .filter($"combatType" === "damage")
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
+      .start()
+
+    val outputSchema = new StructType{}
+      .add("game", IntegerType)
+      .add("combatType", StringType)
+      .add("attacker", StringType)
+      .add("target", StringType)
+      .add("value", StringType)
+      .add("eventTime", StringType)
+
+    (query, outputSchema)
   }
 }
 
