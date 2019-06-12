@@ -161,7 +161,7 @@ object SparkMain{
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR No Query \n" + numRecs * 1000 / (endTime - startTime) + "\n")
-    val result: String = spark.read
+    spark.read
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "output")
@@ -174,13 +174,7 @@ object SparkMain{
         "mean(diff) as latency_avg",
         "percentile_approx(diff, 0.95) as latency_95",
         "percentile_approx(diff, 0.99) as latency_99",
-        "max(diff) as latency_max").toString()
-
-    val file = new File("result.txt")
-    val bw = new BufferedWriter(new FileWriter(file))
-    bw.write("Throughput : " + + numRecs * 1000 / (endTime - startTime) + "\n" )
-    bw.write("Latency: " + result)
-    bw.close()
+        "max(diff) as latency_max").show()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
