@@ -157,7 +157,7 @@ object SparkMain{
     }
 
     val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
-    query.awaitTermination(600000)
+    query.awaitTermination(300000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR No Query \n" + numRecs * 1000 / (endTime - startTime) + "\n")
@@ -174,7 +174,8 @@ object SparkMain{
         "mean(diff) as latency_avg",
         "percentile_approx(diff, 0.95) as latency_95",
         "percentile_approx(diff, 0.99) as latency_99",
-        "max(diff) as latency_max").show()
+        "max(diff) as latency_max")
+      .show()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
