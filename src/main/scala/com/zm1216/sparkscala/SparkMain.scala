@@ -91,6 +91,7 @@ object SparkMain{
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "hero")
+      .option("failOnDataLoss", "false")
       .load
       .select('value.cast("string"), 'timestamp)
 
