@@ -1,5 +1,6 @@
 package com.zm1216.sparkscala
 
+import java.io.{BufferedWriter, File, FileWriter}
 import java.sql.Timestamp
 
 import com.zm1216.sparkscala.queries._
@@ -156,7 +157,7 @@ object SparkMain{
     }
 
     val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
-    query.awaitTermination(600000)
+    query.awaitTermination(60000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR No Query \n" + numRecs * 1000 / (endTime - startTime) + "\n")
@@ -175,6 +176,11 @@ object SparkMain{
         "percentile_approx(diff, 0.99) as latency_99",
         "max(diff) as latency_max")
       .show()
+
+    val file = new File("test.txt")
+    val bw = new BufferedWriter(new FileWriter(file))
+    bw.write("PLZ SEE ME")
+    bw.close()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
