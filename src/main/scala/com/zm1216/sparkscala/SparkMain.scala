@@ -159,7 +159,7 @@ object SparkMain{
 
 //    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
     val query = herodf
-      .select('timestamp as 'value)
+      .select('value)
       .writeStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
