@@ -159,9 +159,13 @@ object SparkMain{
 
 //    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
     val query = herodf
+      .select('timestamp)
       .writeStream
-      .outputMode("update")
-      .format("console")
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
+      .outputMode("append")
       .start()
 
     query.awaitTermination(300000)
