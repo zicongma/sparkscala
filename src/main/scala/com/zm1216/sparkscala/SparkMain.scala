@@ -156,7 +156,7 @@ object SparkMain{
         updates.toList.toIterator
     }
 
-    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
+    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
     query.awaitTermination(600000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
