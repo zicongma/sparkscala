@@ -1,6 +1,6 @@
 package com.zm1216.sparkscala.queries
 
-import com.zm1216.sparkscala.SparkMain.{HeroInfo, TeamLevelInfo, TeamLevelState}
+import com.zm1216.sparkscala.SparkMain._
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode}
@@ -55,6 +55,54 @@ class Aggregation {
       .start()
 
     query.awaitTermination()
+  }
+
+  def HPDMG(combatdf: DataFrame, heroInfos: Dataset[HeroInfo], spark: SparkSession): Unit = {
+
+    import spark.implicits._
+
+    val hpChange = heroInfos
+      .groupByKey(info => (info.game, info.name))
+      .flatMapGroupsWithState[PlayerHealthState, PlayerHealthEvent](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
+      case (key: (Int, String), infos: Iterator[HeroInfo], state: GroupState[PlayerHealthState]) => {
+        var currHP =  if (state.exists) {
+          state.get.hp
+        } else {
+          -1
+        }
+
+        var updates = ListBuffer[PlayerHealthEvent]()
+        infos.foreach { info =>
+          if (info.health != currHP) {
+            updates += PlayerHealthEvent(key._1, key._2, info.health - currHP, info.eventTime)
+          }
+          currHP = info.health
+        }
+        state.update(PlayerHealthState(currHP))
+        updates.toList.toIterator
+      }
+    }
+
+    val hpChangeWatermark = hpChange.withWatermark("eventTime", "2 minutes")
+    val combatDFWatermark = combatdf.withWatermark("timestamp", "10 seconds")
+
+
+    hpChangeWatermark.join(
+      combatDFWatermark,
+      expr("""
+        attacker = name AND
+        timestamp >= eventTime AND
+        timestamp <= eventTime + interval 5 minutes
+        """)
+    )
+      .writeStream
+      .outputMode("update")
+      .format("console")
+      .option("numRows", 100)
+      .option("truncate", "false")
+      .start()
+
+
   }
 
 }

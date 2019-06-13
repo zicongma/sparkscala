@@ -54,6 +54,10 @@ object SparkMain{
 
   case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, lastUpdate: Timestamp)
 
+  case class PlayerHealthState(hp: Int)
+
+  case class PlayerHealthEvent(game: Int, name: String, hpChange: Int, eventTime: Timestamp)
+
   case class Message(action: String, key: String, metaData: String, timestamp: Timestamp)
 
 
