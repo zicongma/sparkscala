@@ -117,62 +117,64 @@ object SparkMain{
         getAttacker('value) as 'attacker,
         getTarget('value) as 'target,
         getValue('value) as 'value,
-        'timestamp as 'eventTime)
+        'timestamp as 'combatTime)
 
-//    val heroMessages = herodf
-//      .as[(String, Timestamp)]
-//      .map { case (line, timestamp) =>
-//        val items = line.split("/")
-//        Message(items(0), items(1) + items(2), line, timestamp)
-//      }
-//
-//    val heroInfos = heroMessages
-//      .groupByKey(_.key)
-//      .flatMapGroupsWithState[HeroState, HeroInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
-//      case (key: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
-//
-//       var newState =  if (state.exists) {
-//          state.get.stateMap
-//        } else {
-//         Map("m_iPlayerID" -> "", "m_iCurrentLevel" -> "", "m_iCurrentXP" -> "", "m_iHealth" -> "", "m_lifeState" -> "",
-//           "CBodyComponent.m_cellX" -> "", "CBodyComponent.m_cellY" -> "", "CBodyComponent.m_vecX" -> "",
-//           "CBodyComponent.m_vecY" -> "", "m_iTeamNum" -> "", "m_iDamageMin" -> "", "m_iDamageMax" -> "",
-//           "m_flStrength" -> "", "m_flAgility" -> "", "m_flIntellect" -> "")
-//       }
-//        var updates = new ListBuffer[HeroInfo]()
-//        messages.foreach { message =>
-//          val items = message.metaData.split("/")
-//          if (message.action == "initialize") {
-//            for (a <- 3 until items.length - 1 by 2) {
-//              newState += (items(a) -> items(a + 1))
-//            }
-//          } else {
-//            newState += (items(3) -> items(4))
-//          }
-//          updates += HeroInfo(items(1).toInt, items(2), newState("m_iPlayerID").toInt, newState("m_iCurrentLevel").toInt,
-//            newState("m_iCurrentXP").toInt, newState("m_iHealth").toInt, newState("m_lifeState").toInt,
-//            newState("CBodyComponent.m_cellX").toInt, newState("CBodyComponent.m_cellY").toInt,
-//            newState("CBodyComponent.m_vecX").toFloat, newState("CBodyComponent.m_vecY").toFloat,
-//            newState("m_iTeamNum").toInt, newState("m_iDamageMin").toInt, newState("m_iDamageMax").toInt,
-//            newState("m_flStrength").toFloat, newState("m_flAgility").toFloat,
-//            newState("m_flIntellect").toFloat, message.timestamp)
-//        }
-//        state.update(HeroState(newState))
-//        updates.toList.toIterator
-//    }
+    val heroMessages = herodf
+      .as[(String, Timestamp)]
+      .map { case (line, timestamp) =>
+        val items = line.split("/")
+        Message(items(0), items(1) + items(2), line, timestamp)
+      }
 
-//    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos)
-    val query = herodf
-      .select('value)
-      .writeStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("topic", "output")
-      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
-      .outputMode("append")
-      .start()
+    val heroInfos = heroMessages
+      .groupByKey(_.key)
+      .flatMapGroupsWithState[HeroState, HeroInfo](OutputMode.Append(), GroupStateTimeout.NoTimeout()) {
+      case (key: String, messages: Iterator[Message], state: GroupState[HeroState]) =>
 
-    query.awaitTermination(300000)
+       var newState =  if (state.exists) {
+          state.get.stateMap
+        } else {
+         Map("m_iPlayerID" -> "", "m_iCurrentLevel" -> "", "m_iCurrentXP" -> "", "m_iHealth" -> "", "m_lifeState" -> "",
+           "CBodyComponent.m_cellX" -> "", "CBodyComponent.m_cellY" -> "", "CBodyComponent.m_vecX" -> "",
+           "CBodyComponent.m_vecY" -> "", "m_iTeamNum" -> "", "m_iDamageMin" -> "", "m_iDamageMax" -> "",
+           "m_flStrength" -> "", "m_flAgility" -> "", "m_flIntellect" -> "")
+       }
+        var updates = new ListBuffer[HeroInfo]()
+        messages.foreach { message =>
+          val items = message.metaData.split("/")
+          if (message.action == "initialize") {
+            for (a <- 3 until items.length - 1 by 2) {
+              newState += (items(a) -> items(a + 1))
+            }
+          } else {
+            newState += (items(3) -> items(4))
+          }
+          updates += HeroInfo(items(1).toInt, items(2), newState("m_iPlayerID").toInt, newState("m_iCurrentLevel").toInt,
+            newState("m_iCurrentXP").toInt, newState("m_iHealth").toInt, newState("m_lifeState").toInt,
+            newState("CBodyComponent.m_cellX").toInt, newState("CBodyComponent.m_cellY").toInt,
+            newState("CBodyComponent.m_vecX").toFloat, newState("CBodyComponent.m_vecY").toFloat,
+            newState("m_iTeamNum").toInt, newState("m_iDamageMin").toInt, newState("m_iDamageMax").toInt,
+            newState("m_flStrength").toFloat, newState("m_flAgility").toFloat,
+            newState("m_flIntellect").toFloat, message.timestamp)
+        }
+        state.update(HeroState(newState))
+        updates.toList.toIterator
+    }
+
+//    val (query, outputSchema) = new Projection().BasicAttributeProjection(heroInfos) npc_dota_hero_earth_spirit CDOTA_Unit_Hero_EarthSpirit
+//    val query = herodf
+//      .select('value)
+//      .writeStream
+//      .format("kafka")
+//      .option("kafka.bootstrap.servers", "localhost:9092")
+//      .option("topic", "output")
+//      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
+//      .outputMode("append")
+//      .start()
+
+    val query = new Aggregation().HPDMG(combatdf, heroInfos, spark)
+
+    query.awaitTermination(600000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR No Query \n" + numRecs * 1000 / (endTime - startTime) + "\n")
