@@ -58,6 +58,7 @@ class Aggregation {
   }
 
   def HPDMG(combatdf: DataFrame, heroInfos: Dataset[HeroInfo], spark: SparkSession): StreamingQuery = {
+    import spark.implicits._
 
     val unifyName = udf((name: String) => {
       val items = name.split('_')
@@ -68,7 +69,7 @@ class Aggregation {
       result
     })
 
-    import spark.implicits._
+    val isHero = udf((name: String) => name.startsWith("npc_dota_hero"))
 
     val hpChange = heroInfos
       .groupByKey(info => (info.game, info.name))
@@ -97,13 +98,11 @@ class Aggregation {
         'eventTime as 'updateTime
       )
 
-    val isHero = udf((name: String) => name.startsWith("npc_dota_hero"))
-
     val hpChangeWatermark = hpChange.withWatermark("updateTime", "2 minutes")
     val combatDFWatermark = combatdf.withWatermark("combatTime", "10 seconds")
 
-
     val query = combatDFWatermark
+        .filter($"combatType" === "damage")
         .filter(isHero('attacker))
         .select('game as 'combatGame,
           unifyName('attacker) as 'attackerName,
@@ -130,7 +129,7 @@ class Aggregation {
         )
       .select('game,
       'attackerName,
-      'value / 'hpGainTotal,
+      'value / 'hpGainTotal as 'attackEfficiency,
       'combatTime)
       .writeStream
       .outputMode("append")
@@ -138,7 +137,6 @@ class Aggregation {
       .option("numRows", 100)
       .option("truncate", "false")
       .start()
-
     query
   }
 
