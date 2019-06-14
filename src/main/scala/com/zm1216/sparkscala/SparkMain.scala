@@ -179,7 +179,7 @@ object SparkMain{
     query.awaitTermination(300000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR STATEFUL \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    println("\n THROUGHPUT FOR JOIN \n" + numRecs * 1000 / (endTime - startTime) + "\n")
     spark.read
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
@@ -194,7 +194,8 @@ object SparkMain{
         "mean(diff) as latency_avg",
         "percentile_approx(diff, 0.95) as latency_95",
         "percentile_approx(diff, 0.99) as latency_99",
-        "max(diff) as latency_max")
+        "max(diff) as latency_max",
+        "count(diff) as num_records")
       .show()
 
 
