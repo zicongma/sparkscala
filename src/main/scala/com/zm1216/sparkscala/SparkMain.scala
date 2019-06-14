@@ -164,37 +164,37 @@ object SparkMain{
         updates.toList.toIterator
     }
 
-    val query = herodf
-      .select('value)
-      .writeStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("topic", "output")
-      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
-      .outputMode("append")
-      .start()
+//    val query = herodf
+//      .select('value)
+//      .writeStream
+//      .format("kafka")
+//      .option("kafka.bootstrap.servers", "localhost:9092")
+//      .option("topic", "output")
+//      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
+//      .outputMode("append")
+//      .start()
 
-//    val (query, outputSchema) = new Selection().TeamRadiantSelection(heroInfos)
+    val (query, outputSchema) = new MathCalculation().HeroPositionCalculation(heroInfos, spark)
 
     query.awaitTermination(1800000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR Selection \n" + numRecs * 1000 / (endTime - startTime) + "\n")
-//    spark.read
-//      .format("kafka")
-//      .option("kafka.bootstrap.servers", "localhost:9092")
-//      .option("subscribe", "output")
-//      .load()
-//      .withColumn("result", from_json('value.cast("string"), outputSchema))
-//      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
-//      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
-//      .selectExpr(
-//        "min(diff) as latency_min",
-//        "mean(diff) as latency_avg",
-//        "percentile_approx(diff, 0.95) as latency_95",
-//        "percentile_approx(diff, 0.99) as latency_99",
-//        "max(diff) as latency_max")
-//      .show()
+    println("\n THROUGHPUT FOR MATH \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    spark.read
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "output")
+      .load()
+      .withColumn("result", from_json('value.cast("string"), outputSchema))
+      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
+      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
+      .selectExpr(
+        "min(diff) as latency_min",
+        "mean(diff) as latency_avg",
+        "percentile_approx(diff, 0.95) as latency_95",
+        "percentile_approx(diff, 0.99) as latency_99",
+        "max(diff) as latency_max")
+      .show()
 
 
 //    val query = new MathCalculation().TerritoryControled(heroInfos, spark)
