@@ -32,7 +32,7 @@ object SparkMain{
 
     override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
       numRecs += event.progress.numInputRows
-      bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
+      //bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
     }
 
     override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
