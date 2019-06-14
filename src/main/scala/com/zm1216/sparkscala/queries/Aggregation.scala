@@ -4,6 +4,7 @@ import com.zm1216.sparkscala.SparkMain._
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode, StreamingQuery}
+import org.apache.spark.sql.types.{FloatType, IntegerType, StringType, StructType}
 
 import scala.collection.mutable.ListBuffer
 
@@ -57,7 +58,7 @@ class Aggregation {
     query.awaitTermination()
   }
 
-  def HPDMG(combatdf: DataFrame, heroInfos: Dataset[HeroInfo], spark: SparkSession): StreamingQuery = {
+  def HPDMG(combatdf: DataFrame, heroInfos: Dataset[HeroInfo], spark: SparkSession): (StreamingQuery, StructType) = {
     import spark.implicits._
 
     val unifyName = udf((name: String) => {
@@ -130,14 +131,23 @@ class Aggregation {
       .select('game,
       'attackerName,
       'value / 'hpGainTotal as 'attackEfficiency,
-      'combatTime)
+      'combatTime as 'eventTime)
+      .select(to_json(struct("*")) as 'value)
       .writeStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
       .start()
-    query
+
+    val outputSchema = new StructType{}
+      .add("game", IntegerType)
+      .add("attackerName", StringType)
+      .add("attackEfficiency", FloatType)
+      .add("eventTime", StringType)
+
+    (query, outputSchema)
   }
 
 }
