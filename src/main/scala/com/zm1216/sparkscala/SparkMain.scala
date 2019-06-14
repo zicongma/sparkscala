@@ -176,7 +176,7 @@ object SparkMain{
 
     val (query, outputSchema) = new MathCalculation().HeroPositionCalculation(heroInfos, spark)
 
-    query.awaitTermination(1800000)
+    query.awaitTermination(300000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR MATH \n" + numRecs * 1000 / (endTime - startTime) + "\n")
