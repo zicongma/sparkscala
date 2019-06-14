@@ -22,11 +22,13 @@ class MathCalculation {
         'cellY * -128 - 'vecY + 32768 as 'worldY,
         'eventTime
       )
+      .select(to_json(struct("*")) as 'value)
       .writeStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
       .start()
 
     val outputSchema = new StructType{}
