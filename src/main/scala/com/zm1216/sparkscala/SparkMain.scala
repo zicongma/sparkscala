@@ -23,6 +23,7 @@ object SparkMain{
   @volatile private var numRecs: Long = 0L
   @volatile private var startTime: Long = 0L
   @volatile private var endTime: Long = 0L
+  val bw = new BufferedWriter(new FileWriter("throughput.txt"))
 
   class ThroughputListener extends StreamingQueryListener {
     override def onQueryStarted(event: StreamingQueryListener.QueryStartedEvent): Unit = {
@@ -31,10 +32,12 @@ object SparkMain{
 
     override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
       numRecs += event.progress.numInputRows
+      bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
     }
 
     override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
       endTime = System.currentTimeMillis()
+      bw.close()
     }
   }
 
@@ -173,7 +176,7 @@ object SparkMain{
 
 //    val (query, outputSchema) = new Selection().TeamRadiantSelection(heroInfos)
 
-    query.awaitTermination(300000)
+    query.awaitTermination(1800000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
     println("\n THROUGHPUT FOR Selection \n" + numRecs * 1000 / (endTime - startTime) + "\n")
