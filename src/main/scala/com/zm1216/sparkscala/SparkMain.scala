@@ -187,15 +187,15 @@ object SparkMain{
       .option("failOnDataLoss", "false")
       .load()
       .withColumn("result", from_json('value.cast("string"), outputSchema))
-//      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
-//      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
-//      .selectExpr(
-//        "min(diff) as latency_min",
-//        "mean(diff) as latency_avg",
-//        "percentile_approx(diff, 0.95) as latency_95",
-//        "percentile_approx(diff, 0.99) as latency_99",
-//        "max(diff) as latency_max",
-//        "count(diff) as num_records")
+      .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
+      .select(realTimeMs('timestamp) - realTimeMs('eventTime) as 'diff)
+      .selectExpr(
+        "min(diff) as latency_min",
+        "mean(diff) as latency_avg",
+        "percentile_approx(diff, 0.95) as latency_95",
+        "percentile_approx(diff, 0.99) as latency_99",
+        "max(diff) as latency_max",
+        "count(diff) as num_records")
       .show()
 
 
