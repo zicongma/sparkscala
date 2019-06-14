@@ -55,7 +55,7 @@ object SparkMain{
 
   case class TeamLevelState(stateMap: Map[String, Int])
 
-  case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, lastUpdate: Timestamp)
+  case class TeamLevelInfo(game: Int, teamNumber: Int, totalLevel: Int, eventTime: Timestamp)
 
   case class PlayerHealthState(hp: Int)
 
@@ -174,7 +174,7 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new MathCalculation().HeroPositionCalculation(heroInfos, spark)
+    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
 
     query.awaitTermination(300000)
     query.stop()

@@ -54,7 +54,7 @@ class Stateful {
       .add("game", IntegerType)
       .add("teamNumber", IntegerType)
       .add("totalLevel", IntegerType)
-      .add("lastUpdate", StringType)
+      .add("eventTime", StringType)
 
     (query, outputSchema)
   }
