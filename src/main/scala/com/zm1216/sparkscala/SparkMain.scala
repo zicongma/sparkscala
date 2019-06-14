@@ -184,6 +184,7 @@ object SparkMain{
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "output")
+      .option("failOnDataLoss", "false")
       .load()
       .withColumn("result", from_json('value.cast("string"), outputSchema))
       .select(col("result.eventTime").cast("timestamp") as "eventTime", 'timestamp)
