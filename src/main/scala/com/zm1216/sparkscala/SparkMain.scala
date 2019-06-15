@@ -174,7 +174,7 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
+    val (query, outputSchema) = new MathCalculation().HeroPositionCalculation(heroInfos, spark)
 
     query.awaitTermination(600000)
     query.stop()
