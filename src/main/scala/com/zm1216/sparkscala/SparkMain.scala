@@ -174,7 +174,7 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new Aggregation().DamageWindowSum(combatdf, spark)
+    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
 
     query.awaitTermination(600000)
     query.stop()
