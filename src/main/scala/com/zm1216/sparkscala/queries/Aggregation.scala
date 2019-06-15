@@ -25,11 +25,13 @@ class Aggregation {
       'attacker, 'game)
       .agg(sum('value) as 'damageTotal,
         max('combatTime) as 'eventTime)
+      .select(to_json(struct("*")) as 'value)
       .writeStream
-      .outputMode("update")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
+      .outputMode("append")
       .start()
 
     val outputSchema = new StructType{}
