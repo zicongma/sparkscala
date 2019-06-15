@@ -10,7 +10,7 @@ import scala.collection.mutable.ListBuffer
 
 class Aggregation {
 
-  def DamageWindowSum(combatdf: DataFrame, spark: SparkSession): Unit = {
+  def DamageWindowSum(combatdf: DataFrame, spark: SparkSession): (StreamingQuery, StructType) = {
 
     import spark.implicits._
 
@@ -19,20 +19,28 @@ class Aggregation {
     val query = combatdf
       .filter($"combatType" === "damage")
       .filter(isHero('attacker))
-      .withWatermark("eventTime", "2 minutes")
+      .withWatermark("combatTime", "2 minutes")
       .groupBy(
-        window('eventTime, "5 minutes", "1 minute"),
+        window('combatTime, "5 minutes", "1 minute"),
       'attacker, 'game)
       .agg(sum('value) as 'damageTotal,
-        max('eventTime) as 'lastUpdate)
+        max('combatTime) as 'eventTime)
+      .select(to_json(struct("*")) as 'value)
       .writeStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("topic", "output")
+      .option("checkpointLocation", s"/tmp/${java.util.UUID.randomUUID()}")
       .outputMode("append")
-      .format("console")
-      .option("numRows", 100)
-      .option("truncate", "false")
       .start()
 
-    query.awaitTermination()
+    val outputSchema = new StructType{}
+      .add("game", IntegerType)
+      .add("attacker", StringType)
+      .add("damageTotal", FloatType)
+      .add("eventTime", StringType)
+
+    (query, outputSchema)
   }
 
   def DamageOverTime(combatdf: DataFrame, spark: SparkSession): Unit = {

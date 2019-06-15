@@ -174,12 +174,12 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new Aggregation().HPDMG(combatdf, heroInfos, spark)
+    val (query, outputSchema) = new Aggregation().DamageWindowSum(combatdf, spark)
 
     query.awaitTermination(600000)
     query.stop()
     val realTimeMs = udf((t: java.sql.Timestamp) => t.getTime)
-    println("\n THROUGHPUT FOR JOIN \n" + numRecs * 1000 / (endTime - startTime) + "\n")
+    println("\n THROUGHPUT FOR AGG \n" + numRecs * 1000 / (endTime - startTime) + "\n")
     spark.read
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
