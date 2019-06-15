@@ -22,8 +22,9 @@ class Aggregation {
       .withWatermark("eventTime", "2 minutes")
       .groupBy(
         window('eventTime, "5 minutes", "1 minute"),
-      'attacker)
-      .agg(sum('value) as 'damageTotal)
+      'attacker, 'game)
+      .agg(sum('value) as 'damageTotal,
+        max('eventTime) as 'lastUpdate)
       .writeStream
       .outputMode("append")
       .format("console")
