@@ -32,7 +32,7 @@ object SparkMain{
 
     override def onQueryProgress(event: StreamingQueryListener.QueryProgressEvent): Unit = {
       numRecs += event.progress.numInputRows
-      //bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
+      bw.write(event.progress.timestamp + "," +  event.progress.numInputRows + "\n")
     }
 
     override def onQueryTerminated(event: StreamingQueryListener.QueryTerminatedEvent): Unit = {
@@ -174,7 +174,7 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new Stateful().TeamInfoAggregation(heroInfos, spark)
+    val (query, outputSchema) = new Aggregation().HPDMG(combatdf, heroinfos, spark)
 
     query.awaitTermination(600000)
     query.stop()
