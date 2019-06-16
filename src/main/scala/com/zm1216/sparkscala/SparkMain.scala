@@ -174,7 +174,7 @@ object SparkMain{
 //      .outputMode("append")
 //      .start()
 
-    val (query, outputSchema) = new Aggregation().HPDMG(combatdf, heroinfos, spark)
+    val (query, outputSchema) = new Aggregation().HPDMG(combatdf, heroInfos , spark)
 
     query.awaitTermination(600000)
     query.stop()
